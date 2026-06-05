@@ -1,5 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
+import socket
+import json
+import threading
 
 # Importa as implementações dos algoritmos de compressão
 from elias_gamma_module import EliasGamma
@@ -9,6 +12,9 @@ from huffman_module import Huffman
 from repetition_module import Repeticao
 from hamming_module import Hamming74
 from crc_module import CRC4
+
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 65432
 
 # ========================
 # INSTANCIAÇÃO DOS ALGORITMOS
@@ -286,6 +292,104 @@ def executar_opcao(algoritmo, acao):
     atualizar_historico()
 
 
+def enviar_ao_servidor():
+    """
+    Envia o último codeword codificado ao servidor para verificação/correção.
+    O algoritmo de erro selecionado (CRC-4, Hamming, Repetição) define o que o servidor fará.
+    Roda em thread separada para não travar a interface.
+    """
+    if ultimo_resultado_codificado is None:
+        messagebox.showerror("Erro", "Codifique uma mensagem antes de enviar ao servidor.")
+        return
+
+    algoritmo = algoritmo_var.get()
+    if algoritmo not in ("CRC-4", "Hamming (7,4)", "Repetição"):
+        messagebox.showerror("Erro", "Selecione CRC-4, Hamming (7,4) ou Repetição para enviar ao servidor.")
+        return
+
+    def _enviar():
+        dados = {
+            "algoritmo": algoritmo,
+            "bits": ultimo_resultado_codificado,
+        }
+
+        if algoritmo == "Hamming (7,4)":
+            dados["padding"] = hamming_padding
+        elif algoritmo == "Repetição":
+            r_valor = entrada_r.get().strip()
+            if not r_valor.isdigit() or int(r_valor) < 1:
+                messagebox.showerror("Erro", "Informe um valor de R válido antes de enviar.")
+                return
+            dados["r"] = int(r_valor)
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5)
+                s.connect((SERVER_HOST, SERVER_PORT))
+                s.sendall((json.dumps(dados) + "\n").encode("utf-8"))
+
+                resposta_raw = b""
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    resposta_raw += chunk
+                    if resposta_raw.endswith(b"\n"):
+                        break
+
+            resposta = json.loads(resposta_raw.decode("utf-8"))
+
+            # Atualiza o histórico com a resposta do servidor (na thread principal)
+            janela.after(0, lambda: _mostrar_resposta(resposta))
+
+        except ConnectionRefusedError:
+            janela.after(0, lambda: messagebox.showerror(
+                "Erro", f"Servidor não encontrado em {SERVER_HOST}:{SERVER_PORT}.\nInicie o servidor com: python server.py"
+            ))
+        except Exception as e:
+            janela.after(0, lambda: messagebox.showerror("Erro", f"Falha na comunicação: {e}"))
+
+    threading.Thread(target=_enviar, daemon=True).start()
+
+
+def _mostrar_resposta(resposta: dict):
+    """Exibe a resposta do servidor no histórico."""
+    if "erro" in resposta:
+        historico.append(f"[Servidor] Erro: {resposta['erro']}")
+        atualizar_historico()
+        return
+
+    alg = resposta.get("algoritmo", "")
+    historico.append(f"--- Resposta do Servidor ({alg}) ---")
+
+    if alg == "CRC-4":
+        historico.append(f"  Resto CRC: {resposta['resto']}")
+        if resposta["sem_erro"]:
+            historico.append("  ✓ Sem erros detectados.")
+            historico.append(f"  Mensagem sem CRC: {resposta['mensagem_sem_crc']}")
+            entrada_mensagem.delete(0, tk.END)
+            entrada_mensagem.insert(0, resposta["mensagem_sem_crc"])
+        else:
+            historico.append("  ✗ Erro detectado na transmissão!")
+
+    elif alg in ("Hamming (7,4)", "Repetição"):
+        erros = resposta.get("erros", [])
+        historico.append(f"  Mensagem corrigida: {resposta['mensagem_corrigida']}")
+        if erros:
+            if alg == "Hamming (7,4)":
+                for e in erros:
+                    status = "corrigido" if e["corrigido"] else "não corrigível"
+                    historico.append(f"  ⚠ Bloco {e['bloco']}, posição {e['posicao']} — {status}.")
+            else:
+                historico.append(f"  ⚠ Erros corrigidos nos blocos: {erros}")
+        else:
+            historico.append("  ✓ Nenhum erro detectado.")
+        entrada_mensagem.delete(0, tk.END)
+        entrada_mensagem.insert(0, resposta["mensagem_corrigida"])
+
+    atualizar_historico()
+
+
 def inserir_erro():
     """
     Inverte o bit na posição informada pelo usuário dentro do último resultado codificado.
@@ -411,6 +515,14 @@ executar_button = tk.Button(
     command=lambda: executar_opcao(algoritmo_var.get(), acao_var.get())
 )
 executar_button.pack()
+
+# Botão para enviar ao servidor (CRC-4, Hamming, Repetição)
+botao_servidor = tk.Button(
+    janela,
+    text="Enviar ao Servidor",
+    command=enviar_ao_servidor
+)
+botao_servidor.pack(pady=(4, 0))
 
 
 # ========================

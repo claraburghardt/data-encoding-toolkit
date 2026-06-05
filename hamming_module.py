@@ -24,10 +24,15 @@ class Hamming74:
         Usa paridade par (XOR).
 
         bits: lista de 7 inteiros (0 ou 1), indexada em 0 (pos 0 = posição 1)
+
+        Cobertura:
+            p1 (pos 1): cobre posições 1, 3, 5, 7 → índices 0, 2, 4, 6
+            p2 (pos 2): cobre posições 2, 3, 6, 7 → índices 1, 2, 5, 6
+            p3 (pos 4): cobre posições 4, 5, 6, 7 → índices 3, 4, 5, 6
         """
-        p1 = bits[2] ^ bits[4] ^ bits[6]   # posições 3, 5, 7
-        p2 = bits[2] ^ bits[5] ^ bits[6]   # posições 3, 6, 7
-        p3 = bits[4] ^ bits[5] ^ bits[6]   # posições 5, 6, 7
+        p1 = bits[0] ^ bits[2] ^ bits[4] ^ bits[6]   # posições 1, 3, 5, 7
+        p2 = bits[1] ^ bits[2] ^ bits[5] ^ bits[6]   # posições 2, 3, 6, 7
+        p3 = bits[3] ^ bits[4] ^ bits[5] ^ bits[6]   # posições 4, 5, 6, 7
         return [p1, p2, p3]
 
     def encoder(self, bits: str) -> tuple:
