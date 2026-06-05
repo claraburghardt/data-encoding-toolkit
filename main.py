@@ -6,6 +6,7 @@ from elias_gamma_module import EliasGamma
 from fibonacci_module import Fibonacci
 from golomb_module import Golomb
 from huffman_module import Huffman
+from repetition_module import Repeticao
 
 # ========================
 # INSTANCIAÇÃO DOS ALGORITMOS
@@ -16,6 +17,7 @@ golomb = Golomb()
 elias_gamma = EliasGamma()
 huffman = Huffman()
 fibonacci = Fibonacci()
+repeticao = Repeticao()
 
 # Variável global para guardar a árvore do Huffman
 # IMPORTANTE:
@@ -98,6 +100,22 @@ def executar_opcao(algoritmo, acao):
             # Precisamos guardar a árvore para decodificar depois
             historico.append(f"Codificado (Huffman): {resultado}")
 
+        elif algoritmo == "Repetição":
+            # Usa automaticamente o último resultado codificado
+            if ultimo_resultado_codificado is None:
+                messagebox.showerror("Erro", "Codifique uma mensagem com outro algoritmo antes de aplicar Repetição.")
+                return
+
+            r_valor = entrada_r.get().strip()
+            if not r_valor.isdigit() or int(r_valor) < 1:
+                messagebox.showerror("Erro", "Informe um valor de R válido (inteiro >= 1).")
+                return
+
+            r = int(r_valor)
+            resultado = repeticao.encoder(ultimo_resultado_codificado, r)
+            historico.append(f"Entrada para Repetição (bits anteriores): {ultimo_resultado_codificado}")
+            historico.append(f"Codificado (Repetição, r={r}): {resultado}")
+
         # Habilita inserção de erro após codificação
         ultimo_resultado_codificado = resultado.replace(" ", "")
         label_erro.config(text=f"Inserir erro (posição 0 a {len(ultimo_resultado_codificado) - 1}):")
@@ -141,6 +159,28 @@ def executar_opcao(algoritmo, acao):
                 return
 
             resultado = huffman.decoder(mensagem, huffman_raiz)
+
+        elif algoritmo == "Repetição":
+            r_valor = entrada_r.get().strip()
+            if not r_valor.isdigit() or int(r_valor) < 1:
+                messagebox.showerror("Erro", "Informe um valor de R válido (inteiro >= 1).")
+                return
+
+            r = int(r_valor)
+            try:
+                resultado, erros = repeticao.decoder(mensagem.replace(" ", ""), r)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            if erros:
+                historico.append(f"Decodificado (Repetição, r={r}): {resultado}")
+                historico.append(f"⚠ Erros detectados e corrigidos nos blocos: {erros}")
+            else:
+                historico.append(f"Decodificado (Repetição, r={r}): {resultado}")
+                historico.append("✓ Nenhum erro detectado.")
+            atualizar_historico()
+            return
 
         # Adiciona resultado ao histórico
         historico.append(f"Decodificado ({algoritmo}): {resultado}")
@@ -206,22 +246,33 @@ tk.Label(janela, text="Parâmetro k (apenas para decodificação Golomb):").pack
 
 # Começa desabilitado (só é necessário em um caso específico)
 entrada_k = tk.Entry(janela, width=10, state=tk.DISABLED)
-entrada_k.pack(pady=(0, 10))
+entrada_k.pack(pady=(0, 5))
+
+# Campo para o parâmetro R da Repetição
+tk.Label(janela, text="Parâmetro R (apenas para Repetição):").pack()
+entrada_r = tk.Entry(janela, width=10, state=tk.DISABLED)
+entrada_r.insert(0, "3")
+entrada_r.pack(pady=(0, 10))
 
 
 def atualizar_campo_k(*args):
     """
-    Controla quando o campo k deve estar ativo.
-
-    Regra:
-    - Só é necessário quando:
-        algoritmo = Golomb
-        ação = Decodificar
+    Controla visibilidade dos campos auxiliares conforme algoritmo/ação selecionados.
     """
-    if algoritmo_var.get() == "Golomb" and acao_var.get() == "Decodificar":
+    alg = algoritmo_var.get()
+    acao = acao_var.get()
+
+    # Campo k: só para Golomb + Decodificar
+    if alg == "Golomb" and acao == "Decodificar":
         entrada_k.config(state=tk.NORMAL)
     else:
         entrada_k.config(state=tk.DISABLED)
+
+    # Campo R: só para Repetição
+    if alg == "Repetição":
+        entrada_r.config(state=tk.NORMAL)
+    else:
+        entrada_r.config(state=tk.DISABLED)
 
 
 # ========================
@@ -235,7 +286,7 @@ algoritmo_var.trace_add("write", atualizar_campo_k)
 algoritmo_menu = tk.OptionMenu(
     janela,
     algoritmo_var,
-    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman"
+    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman", "Repetição"
 )
 algoritmo_menu.pack()
 
