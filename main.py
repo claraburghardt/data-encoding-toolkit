@@ -10,7 +10,7 @@ from fibonacci_module import Fibonacci
 from golomb_module import Golomb
 from huffman_module import Huffman
 from repetition_module import Repeticao
-from hamming_module_2 import Hamming74
+from hamming_module import Hamming74
 from crc_module import CRC4
 
 SERVER_HOST = "127.0.0.1"

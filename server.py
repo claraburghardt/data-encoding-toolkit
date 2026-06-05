@@ -3,7 +3,7 @@ import json
 import threading
 
 from crc_module import CRC4
-from hamming_module_2 import Hamming74
+from hamming_module import Hamming74
 from repetition_module import Repeticao
 
 HOST = "127.0.0.1"
