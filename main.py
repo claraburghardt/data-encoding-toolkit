@@ -384,8 +384,6 @@ def _mostrar_resposta(resposta: dict):
                 historico.append(f"  ⚠ Erros corrigidos nos blocos: {erros}")
         else:
             historico.append("  ✓ Nenhum erro detectado.")
-        entrada_mensagem.delete(0, tk.END)
-        entrada_mensagem.insert(0, resposta["mensagem_corrigida"])
 
     atualizar_historico()
 
