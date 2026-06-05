@@ -1,20 +1,4 @@
 class Hamming74:
-    """
-    Código de Hamming (7,4).
-
-    Codifica blocos de 4 bits de dados em palavras de 7 bits,
-    adicionando 3 bits de paridade nas posições 1, 2 e 4 (indexadas em 1).
-
-    Estrutura do codeword (posições 1-7):
-        p1  p2  d1  p3  d2  d3  d4
-    onde p = bit de paridade, d = bit de dado.
-
-    Capacidade:
-        - Detecta até 2 erros de bit
-        - Corrige 1 erro de bit por bloco (indica a posição exata)
-    """
-
-    # Posições dos bits de dados e paridade (indexadas em 1)
     _POS_DADOS    = [3, 5, 6, 7]
     _POS_PARIDADE = [1, 2, 4]
 
@@ -102,11 +86,13 @@ class Hamming74:
             bloco_str = bits[i:i + 7]
             word = [int(b) for b in bloco_str]
 
-            # Calcula síndrome: recalcula paridades e compara com as recebidas
-            p1, p2, p3 = self._calcular_paridades(word)
-            s1 = p1 ^ word[0]  # posição 1
-            s2 = p2 ^ word[1]  # posição 2
-            s3 = p3 ^ word[3]  # posição 4
+            # Calcula síndrome diretamente sobre os 7 bits recebidos (incluindo paridades).
+            # No Hamming padrão, o XOR de cada grupo de cobertura já é a síndrome —
+            # não se compara com o bit de paridade armazenado, pois ele já está incluído no grupo.
+            # Resultado 0 → sem erro; resultado != 0 → índice do bit errado (em base 1).
+            s1 = word[0] ^ word[2] ^ word[4] ^ word[6]  # cobre posições 1,3,5,7
+            s2 = word[1] ^ word[2] ^ word[5] ^ word[6]  # cobre posições 2,3,6,7
+            s3 = word[3] ^ word[4] ^ word[5] ^ word[6]  # cobre posições 4,5,6,7
 
             # Síndrome indica a posição do erro (em base 1)
             sindrome = s1 * 1 + s2 * 2 + s3 * 4
