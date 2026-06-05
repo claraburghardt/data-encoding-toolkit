@@ -423,6 +423,9 @@ def inserir_erro():
     historico.append(f"Original:   {bits}")
     historico.append(f"Com erro:   {bits_com_erro}  (bit {pos}: {bit_original} → {bit_novo})")
 
+    # Atualiza a variável global para que o envio ao servidor use os bits com erro
+    ultimo_resultado_codificado = bits_com_erro
+
     # Preenche o campo de entrada com os bits corrompidos para facilitar decodificação
     entrada_mensagem.delete(0, tk.END)
     entrada_mensagem.insert(0, bits_com_erro)
