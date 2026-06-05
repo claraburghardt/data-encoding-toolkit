@@ -15,17 +15,6 @@ repeticao = Repeticao()
 
 
 def processar(dados: dict) -> dict:
-    """
-    Processa a requisição recebida do cliente.
-
-    Campos esperados em dados:
-        - algoritmo: "CRC-4", "Hamming (7,4)" ou "Repetição"
-        - bits: string binária (mensagem a verificar/corrigir)
-        - padding (opcional): int, necessário para Hamming
-        - r (opcional): int, necessário para Repetição
-
-    Retorna dict com o resultado.
-    """
     algoritmo = dados.get("algoritmo", "")
     bits = dados.get("bits", "")
 
@@ -68,10 +57,14 @@ def processar(dados: dict) -> dict:
         except ValueError as e:
             return {"erro": str(e)}
 
+        # Re-encodar para devolver os bits ainda no formato de repetição.
+        # O cliente precisa desses bits para decodificar a Repetição localmente.
+        bits_corrigidos = repeticao.encoder(resultado, r)
+
         return {
             "algoritmo": "Repetição",
             "mensagem_recebida": bits,
-            "mensagem_corrigida": resultado,
+            "mensagem_corrigida": bits_corrigidos,
             "erros": erros,
         }
 
@@ -98,16 +91,18 @@ def handle_client(conn, addr):
         print(f"[Servidor] Enviando: {resposta}")
 
         conn.sendall((json.dumps(resposta) + "\n").encode("utf-8"))
+
     except Exception as e:
         erro = {"erro": str(e)}
         conn.sendall((json.dumps(erro) + "\n").encode("utf-8"))
+
     finally:
         conn.close()
 
 
 def iniciar_servidor():
-    """Inicia o servidor TCP em localhost:65432."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # SO_REUSEADDR evita o erro "address already in use" ao reiniciar o servidor
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((HOST, PORT))
     server.listen()
@@ -115,6 +110,7 @@ def iniciar_servidor():
 
     while True:
         conn, addr = server.accept()
+        # Cada cliente é atendido em uma thread separada
         thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
         thread.start()
 
