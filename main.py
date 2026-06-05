@@ -7,6 +7,7 @@ from fibonacci_module import Fibonacci
 from golomb_module import Golomb
 from huffman_module import Huffman
 from repetition_module import Repeticao
+from hamming_module import Hamming74
 
 # ========================
 # INSTANCIAÇÃO DOS ALGORITMOS
@@ -18,6 +19,7 @@ elias_gamma = EliasGamma()
 huffman = Huffman()
 fibonacci = Fibonacci()
 repeticao = Repeticao()
+hamming = Hamming74()
 
 # Variável global para guardar a árvore do Huffman
 # IMPORTANTE:
@@ -26,6 +28,9 @@ huffman_raiz = None
 
 # Guarda o último resultado codificado (sem espaços) para inserção de erro
 ultimo_resultado_codificado = None
+
+# Guarda o padding do Hamming para usar na decodificação
+hamming_padding = 0
 
 
 def atualizar_historico():
@@ -46,7 +51,7 @@ def executar_opcao(algoritmo, acao):
     - se vai codificar ou decodificar
     """
 
-    global huffman_raiz, ultimo_resultado_codificado
+    global huffman_raiz, ultimo_resultado_codificado, hamming_padding
 
     # ========================
     # ENTRADA DO USUÁRIO
@@ -116,11 +121,36 @@ def executar_opcao(algoritmo, acao):
             historico.append(f"Entrada para Repetição (bits anteriores): {ultimo_resultado_codificado}")
             historico.append(f"Codificado (Repetição, r={r}): {resultado}")
 
+        elif algoritmo == "Hamming (7,4)":
+            # Usa automaticamente o último resultado codificado
+            if ultimo_resultado_codificado is None:
+                messagebox.showerror("Erro", "Codifique uma mensagem com outro algoritmo antes de aplicar Hamming.")
+                return
+
+            try:
+                resultado, hamming_padding = hamming.encoder(ultimo_resultado_codificado)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            historico.append(f"Entrada para Hamming (bits anteriores): {ultimo_resultado_codificado}")
+            if hamming_padding > 0:
+                historico.append(f"  (padding adicionado: {hamming_padding} bit(s))")
+            historico.append(f"Codificado (Hamming 7,4): {resultado}")
+
         # Habilita inserção de erro após codificação
         ultimo_resultado_codificado = resultado.replace(" ", "")
         label_erro.config(text=f"Inserir erro (posição 0 a {len(ultimo_resultado_codificado) - 1}):")
         entrada_pos_erro.config(state=tk.NORMAL)
         botao_erro.config(state=tk.NORMAL)
+
+        # Atualiza o histórico antes de preencher o campo de entrada
+        atualizar_historico()
+
+        # Preenche o campo de entrada com os bits gerados para facilitar decodificação
+        entrada_mensagem.delete(0, tk.END)
+        entrada_mensagem.insert(0, ultimo_resultado_codificado)
+        return
 
     # ========================
     # DECODIFICAÇÃO
@@ -179,6 +209,34 @@ def executar_opcao(algoritmo, acao):
             else:
                 historico.append(f"Decodificado (Repetição, r={r}): {resultado}")
                 historico.append("✓ Nenhum erro detectado.")
+
+            # Preenche o campo com os bits recuperados para facilitar próxima decodificação
+            entrada_mensagem.delete(0, tk.END)
+            entrada_mensagem.insert(0, resultado)
+            atualizar_historico()
+            return
+
+        elif algoritmo == "Hamming (7,4)":
+            try:
+                resultado, erros = hamming.decoder(mensagem.replace(" ", ""), hamming_padding)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            if erros:
+                historico.append(f"Decodificado (Hamming 7,4): {resultado}")
+                for e in erros:
+                    if e["corrigido"]:
+                        historico.append(f"⚠ Erro no bloco {e['bloco']}, posição {e['posicao']} — corrigido.")
+                    else:
+                        historico.append(f"✗ Erro no bloco {e['bloco']}, posição {e['posicao']} — não corrigível.")
+            else:
+                historico.append(f"Decodificado (Hamming 7,4): {resultado}")
+                historico.append("✓ Nenhum erro detectado.")
+
+            # Preenche o campo com os bits recuperados para facilitar próxima decodificação
+            entrada_mensagem.delete(0, tk.END)
+            entrada_mensagem.insert(0, resultado)
             atualizar_historico()
             return
 
@@ -286,7 +344,7 @@ algoritmo_var.trace_add("write", atualizar_campo_k)
 algoritmo_menu = tk.OptionMenu(
     janela,
     algoritmo_var,
-    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman", "Repetição"
+    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman", "Repetição", "Hamming (7,4)"
 )
 algoritmo_menu.pack()
 
