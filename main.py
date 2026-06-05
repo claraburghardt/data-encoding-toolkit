@@ -1,11 +1,20 @@
 import tkinter as tk
 from tkinter import messagebox
+import socket
+import json
+import threading
 
 # Importa as implementações dos algoritmos de compressão
 from elias_gamma_module import EliasGamma
 from fibonacci_module import Fibonacci
 from golomb_module import Golomb
 from huffman_module import Huffman
+from repetition_module import Repeticao
+from hamming_module_2 import Hamming74
+from crc_module import CRC4
+
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 65432
 
 # ========================
 # INSTANCIAÇÃO DOS ALGORITMOS
@@ -16,11 +25,29 @@ golomb = Golomb()
 elias_gamma = EliasGamma()
 huffman = Huffman()
 fibonacci = Fibonacci()
+repeticao = Repeticao()
+hamming = Hamming74()
+crc = CRC4()
 
 # Variável global para guardar a árvore do Huffman
 # IMPORTANTE:
 # Diferente dos outros algoritmos, o Huffman precisa da árvore para decodificar
 huffman_raiz = None
+
+# Guarda o último resultado codificado (sem espaços) para inserção de erro
+ultimo_resultado_codificado = None
+
+# Guarda o padding do Hamming para usar na decodificação
+hamming_padding = 0
+
+
+def atualizar_historico():
+    """Reescreve o histórico na caixa de texto."""
+    historico_texto.config(state=tk.NORMAL)
+    historico_texto.delete(1.0, tk.END)
+    for linha in historico:
+        historico_texto.insert(tk.END, linha + "\n")
+    historico_texto.config(state=tk.DISABLED)
 
 
 def executar_opcao(algoritmo, acao):
@@ -32,12 +59,12 @@ def executar_opcao(algoritmo, acao):
     - se vai codificar ou decodificar
     """
 
-    global huffman_raiz
+    global huffman_raiz, ultimo_resultado_codificado, hamming_padding
 
     # ========================
     # ENTRADA DO USUÁRIO
     # ========================
-    
+
     # Pega o texto digitado e remove espaços extras
     mensagem = entrada_mensagem.get().strip()
 
@@ -51,7 +78,7 @@ def executar_opcao(algoritmo, acao):
     # ========================
     # CODIFICAÇÃO
     # ========================
-    
+
     if acao == "Codificar":
 
         if algoritmo == "Golomb":
@@ -86,10 +113,73 @@ def executar_opcao(algoritmo, acao):
             # Precisamos guardar a árvore para decodificar depois
             historico.append(f"Codificado (Huffman): {resultado}")
 
+        elif algoritmo == "Repetição":
+            # Usa automaticamente o último resultado codificado
+            if ultimo_resultado_codificado is None:
+                messagebox.showerror("Erro", "Codifique uma mensagem com outro algoritmo antes de aplicar Repetição.")
+                return
+
+            r_valor = entrada_r.get().strip()
+            if not r_valor.isdigit() or int(r_valor) < 1:
+                messagebox.showerror("Erro", "Informe um valor de R válido (inteiro >= 1).")
+                return
+
+            r = int(r_valor)
+            resultado = repeticao.encoder(ultimo_resultado_codificado, r)
+            historico.append(f"Entrada para Repetição (bits anteriores): {ultimo_resultado_codificado}")
+            historico.append(f"Codificado (Repetição, r={r}): {resultado}")
+
+        elif algoritmo == "Hamming (7,4)":
+            # Usa automaticamente o último resultado codificado
+            if ultimo_resultado_codificado is None:
+                messagebox.showerror("Erro", "Codifique uma mensagem com outro algoritmo antes de aplicar Hamming.")
+                return
+
+            try:
+                resultado, hamming_padding = hamming.encoder(ultimo_resultado_codificado)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            historico.append(f"Entrada para Hamming (bits anteriores): {ultimo_resultado_codificado}")
+            if hamming_padding > 0:
+                historico.append(f"  (padding adicionado: {hamming_padding} bit(s))")
+            historico.append(f"Codificado (Hamming 7,4): {resultado}")
+
+        elif algoritmo == "CRC-4":
+            # Usa automaticamente o último resultado codificado
+            if ultimo_resultado_codificado is None:
+                messagebox.showerror("Erro", "Codifique uma mensagem com outro algoritmo antes de aplicar CRC.")
+                return
+
+            try:
+                resultado, crc_bits = crc.encoder(ultimo_resultado_codificado)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            historico.append(f"Entrada para CRC (bits anteriores): {ultimo_resultado_codificado}")
+            historico.append(f"Bits de redundância (CRC-4): {crc_bits}")
+            historico.append(f"Mensagem com CRC anexado: {resultado}")
+
+        # Habilita inserção de erro após codificação
+        ultimo_resultado_codificado = resultado.replace(" ", "")
+        label_erro.config(text=f"Inserir erro (posição 0 a {len(ultimo_resultado_codificado) - 1}):")
+        entrada_pos_erro.config(state=tk.NORMAL)
+        botao_erro.config(state=tk.NORMAL)
+
+        # Atualiza o histórico antes de preencher o campo de entrada
+        atualizar_historico()
+
+        # Preenche o campo de entrada com os bits gerados para facilitar decodificação
+        entrada_mensagem.delete(0, tk.END)
+        entrada_mensagem.insert(0, ultimo_resultado_codificado)
+        return
+
     # ========================
     # DECODIFICAÇÃO
     # ========================
-    
+
     elif acao == "Decodificar":
 
         # Validação binária (aceita espaços)
@@ -124,25 +214,220 @@ def executar_opcao(algoritmo, acao):
 
             resultado = huffman.decoder(mensagem, huffman_raiz)
 
+        elif algoritmo == "Repetição":
+            r_valor = entrada_r.get().strip()
+            if not r_valor.isdigit() or int(r_valor) < 1:
+                messagebox.showerror("Erro", "Informe um valor de R válido (inteiro >= 1).")
+                return
+
+            r = int(r_valor)
+            try:
+                resultado, erros = repeticao.decoder(mensagem.replace(" ", ""), r)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            if erros:
+                historico.append(f"Decodificado (Repetição, r={r}): {resultado}")
+                historico.append(f"⚠ Erros detectados e corrigidos nos blocos: {erros}")
+            else:
+                historico.append(f"Decodificado (Repetição, r={r}): {resultado}")
+                historico.append("✓ Nenhum erro detectado.")
+
+            # Preenche o campo com os bits recuperados para facilitar próxima decodificação
+            entrada_mensagem.delete(0, tk.END)
+            entrada_mensagem.insert(0, resultado)
+            atualizar_historico()
+            return
+
+        elif algoritmo == "Hamming (7,4)":
+            try:
+                resultado, erros = hamming.decoder(mensagem.replace(" ", ""), hamming_padding)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            if erros:
+                historico.append(f"Decodificado (Hamming 7,4): {resultado}")
+                for e in erros:
+                    if e["corrigido"]:
+                        historico.append(f"⚠ Erro no bloco {e['bloco']}, posição {e['posicao']} — corrigido.")
+                    else:
+                        historico.append(f"✗ Erro no bloco {e['bloco']}, posição {e['posicao']} — não corrigível.")
+            else:
+                historico.append(f"Decodificado (Hamming 7,4): {resultado}")
+                historico.append("✓ Nenhum erro detectado.")
+
+            # Preenche o campo com os bits recuperados para facilitar próxima decodificação
+            entrada_mensagem.delete(0, tk.END)
+            entrada_mensagem.insert(0, resultado)
+            atualizar_historico()
+            return
+
+        elif algoritmo == "CRC-4":
+            # CRC não corrige erros, apenas verifica integridade
+            try:
+                sem_erro, resto = crc.verificar(mensagem.replace(" ", ""))
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            bits_sem_crc = mensagem.replace(" ", "")[:-4]
+            historico.append(f"Verificação CRC-4:")
+            historico.append(f"  Mensagem recebida: {mensagem.replace(' ', '')}")
+            historico.append(f"  Resto da divisão: {resto}")
+            if sem_erro:
+                historico.append("  ✓ Nenhum erro detectado.")
+                historico.append(f"  Mensagem original (sem CRC): {bits_sem_crc}")
+                entrada_mensagem.delete(0, tk.END)
+                entrada_mensagem.insert(0, bits_sem_crc)
+            else:
+                historico.append("  ✗ Erro detectado na transmissão!")
+            atualizar_historico()
+            return
+
         # Adiciona resultado ao histórico
         historico.append(f"Decodificado ({algoritmo}): {resultado}")
 
-    # ========================
-    # ATUALIZAÇÃO DA INTERFACE
-    # ========================
+    atualizar_historico()
 
-    # Libera edição temporariamente
-    historico_texto.config(state=tk.NORMAL)
 
-    # Limpa o conteúdo atual
-    historico_texto.delete(1.0, tk.END)
+def enviar_ao_servidor():
+    """
+    Envia o último codeword codificado ao servidor para verificação/correção.
+    O algoritmo de erro selecionado (CRC-4, Hamming, Repetição) define o que o servidor fará.
+    Roda em thread separada para não travar a interface.
+    """
+    if ultimo_resultado_codificado is None:
+        messagebox.showerror("Erro", "Codifique uma mensagem antes de enviar ao servidor.")
+        return
 
-    # Reescreve todo o histórico
-    for linha in historico:
-        historico_texto.insert(tk.END, linha + "\n")
+    algoritmo = algoritmo_var.get()
+    if algoritmo not in ("CRC-4", "Hamming (7,4)", "Repetição"):
+        messagebox.showerror("Erro", "Selecione CRC-4, Hamming (7,4) ou Repetição para enviar ao servidor.")
+        return
 
-    # Bloqueia edição (somente leitura)
-    historico_texto.config(state=tk.DISABLED)
+    def _enviar():
+        dados = {
+            "algoritmo": algoritmo,
+            "bits": ultimo_resultado_codificado,
+        }
+
+        if algoritmo == "Hamming (7,4)":
+            dados["padding"] = hamming_padding
+        elif algoritmo == "Repetição":
+            r_valor = entrada_r.get().strip()
+            if not r_valor.isdigit() or int(r_valor) < 1:
+                messagebox.showerror("Erro", "Informe um valor de R válido antes de enviar.")
+                return
+            dados["r"] = int(r_valor)
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5)
+                s.connect((SERVER_HOST, SERVER_PORT))
+                s.sendall((json.dumps(dados) + "\n").encode("utf-8"))
+
+                resposta_raw = b""
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    resposta_raw += chunk
+                    if resposta_raw.endswith(b"\n"):
+                        break
+
+            resposta = json.loads(resposta_raw.decode("utf-8"))
+
+            # Atualiza o histórico com a resposta do servidor (na thread principal)
+            janela.after(0, lambda: _mostrar_resposta(resposta))
+
+        except ConnectionRefusedError:
+            janela.after(0, lambda: messagebox.showerror(
+                "Erro", f"Servidor não encontrado em {SERVER_HOST}:{SERVER_PORT}.\nInicie o servidor com: python server.py"
+            ))
+        except Exception as e:
+            janela.after(0, lambda: messagebox.showerror("Erro", f"Falha na comunicação: {e}"))
+
+    threading.Thread(target=_enviar, daemon=True).start()
+
+
+def _mostrar_resposta(resposta: dict):
+    """Exibe a resposta do servidor no histórico."""
+    if "erro" in resposta:
+        historico.append(f"[Servidor] Erro: {resposta['erro']}")
+        atualizar_historico()
+        return
+
+    alg = resposta.get("algoritmo", "")
+    historico.append(f"--- Resposta do Servidor ({alg}) ---")
+
+    if alg == "CRC-4":
+        historico.append(f"  Resto CRC: {resposta['resto']}")
+        if resposta["sem_erro"]:
+            historico.append("  ✓ Sem erros detectados.")
+            historico.append(f"  Mensagem sem CRC: {resposta['mensagem_sem_crc']}")
+            entrada_mensagem.delete(0, tk.END)
+            entrada_mensagem.insert(0, resposta["mensagem_sem_crc"])
+        else:
+            historico.append("  ✗ Erro detectado na transmissão!")
+
+    elif alg in ("Hamming (7,4)", "Repetição"):
+        erros = resposta.get("erros", [])
+        historico.append(f"  Mensagem corrigida: {resposta['mensagem_corrigida']}")
+        if erros:
+            if alg == "Hamming (7,4)":
+                for e in erros:
+                    status = "corrigido" if e["corrigido"] else "não corrigível"
+                    historico.append(f"  ⚠ Bloco {e['bloco']}, posição {e['posicao']} — {status}.")
+            else:
+                historico.append(f"  ⚠ Erros corrigidos nos blocos: {erros}")
+        else:
+            historico.append("  ✓ Nenhum erro detectado.")
+        entrada_mensagem.delete(0, tk.END)
+        entrada_mensagem.insert(0, resposta["mensagem_corrigida"])
+
+    atualizar_historico()
+
+
+def inserir_erro():
+    """
+    Inverte o bit na posição informada pelo usuário dentro do último resultado codificado.
+    Registra o antes e depois no histórico e preenche o campo de entrada para facilitar
+    a decodificação com erro.
+    """
+    global ultimo_resultado_codificado
+
+    if ultimo_resultado_codificado is None:
+        messagebox.showerror("Erro", "Codifique uma mensagem antes de inserir erros.")
+        return
+
+    pos_str = entrada_pos_erro.get().strip()
+    if not pos_str.isdigit():
+        messagebox.showerror("Erro", "Informe uma posição numérica válida.")
+        return
+
+    pos = int(pos_str)
+    bits = ultimo_resultado_codificado
+
+    if pos < 0 or pos >= len(bits):
+        messagebox.showerror("Erro", f"Posição inválida. Escolha entre 0 e {len(bits) - 1}.")
+        return
+
+    # Inverte o bit na posição informada
+    bit_original = bits[pos]
+    bit_novo = "1" if bit_original == "0" else "0"
+    bits_com_erro = bits[:pos] + bit_novo + bits[pos + 1:]
+
+    historico.append(f"--- Inserção de erro ---")
+    historico.append(f"Original:   {bits}")
+    historico.append(f"Com erro:   {bits_com_erro}  (bit {pos}: {bit_original} → {bit_novo})")
+
+    # Preenche o campo de entrada com os bits corrompidos para facilitar decodificação
+    entrada_mensagem.delete(0, tk.END)
+    entrada_mensagem.insert(0, bits_com_erro)
+
+    atualizar_historico()
 
 
 # ========================
@@ -163,22 +448,33 @@ tk.Label(janela, text="Parâmetro k (apenas para decodificação Golomb):").pack
 
 # Começa desabilitado (só é necessário em um caso específico)
 entrada_k = tk.Entry(janela, width=10, state=tk.DISABLED)
-entrada_k.pack(pady=(0, 10))
+entrada_k.pack(pady=(0, 5))
+
+# Campo para o parâmetro R da Repetição
+tk.Label(janela, text="Parâmetro R (apenas para Repetição):").pack()
+entrada_r = tk.Entry(janela, width=10, state=tk.DISABLED)
+entrada_r.insert(0, "3")
+entrada_r.pack(pady=(0, 10))
 
 
 def atualizar_campo_k(*args):
     """
-    Controla quando o campo k deve estar ativo.
-
-    Regra:
-    - Só é necessário quando:
-        algoritmo = Golomb
-        ação = Decodificar
+    Controla visibilidade dos campos auxiliares conforme algoritmo/ação selecionados.
     """
-    if algoritmo_var.get() == "Golomb" and acao_var.get() == "Decodificar":
+    alg = algoritmo_var.get()
+    acao = acao_var.get()
+
+    # Campo k: só para Golomb + Decodificar
+    if alg == "Golomb" and acao == "Decodificar":
         entrada_k.config(state=tk.NORMAL)
     else:
         entrada_k.config(state=tk.DISABLED)
+
+    # Campo R: só para Repetição
+    if alg == "Repetição":
+        entrada_r.config(state=tk.NORMAL)
+    else:
+        entrada_r.config(state=tk.DISABLED)
 
 
 # ========================
@@ -192,7 +488,7 @@ algoritmo_var.trace_add("write", atualizar_campo_k)
 algoritmo_menu = tk.OptionMenu(
     janela,
     algoritmo_var,
-    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman"
+    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman", "Repetição", "Hamming (7,4)", "CRC-4"
 )
 algoritmo_menu.pack()
 
@@ -219,6 +515,38 @@ executar_button = tk.Button(
     command=lambda: executar_opcao(algoritmo_var.get(), acao_var.get())
 )
 executar_button.pack()
+
+# Botão para enviar ao servidor (CRC-4, Hamming, Repetição)
+botao_servidor = tk.Button(
+    janela,
+    text="Enviar ao Servidor",
+    command=enviar_ao_servidor
+)
+botao_servidor.pack(pady=(4, 0))
+
+
+# ========================
+# INSERÇÃO DE ERRO
+# ========================
+
+tk.Frame(janela, height=1, bg="gray").pack(fill=tk.X, padx=10, pady=(10, 0))
+
+label_erro = tk.Label(janela, text="Inserir erro (posição):")
+label_erro.pack(pady=(6, 0))
+
+frame_erro = tk.Frame(janela)
+frame_erro.pack(pady=(0, 10))
+
+entrada_pos_erro = tk.Entry(frame_erro, width=8, state=tk.DISABLED)
+entrada_pos_erro.pack(side=tk.LEFT, padx=(0, 5))
+
+botao_erro = tk.Button(
+    frame_erro,
+    text="Inserir Erro",
+    state=tk.DISABLED,
+    command=inserir_erro
+)
+botao_erro.pack(side=tk.LEFT)
 
 
 # ========================
