@@ -8,6 +8,7 @@ from golomb_module import Golomb
 from huffman_module import Huffman
 from repetition_module import Repeticao
 from hamming_module import Hamming74
+from crc_module import CRC4
 
 # ========================
 # INSTANCIAÇÃO DOS ALGORITMOS
@@ -20,6 +21,7 @@ huffman = Huffman()
 fibonacci = Fibonacci()
 repeticao = Repeticao()
 hamming = Hamming74()
+crc = CRC4()
 
 # Variável global para guardar a árvore do Huffman
 # IMPORTANTE:
@@ -138,6 +140,22 @@ def executar_opcao(algoritmo, acao):
                 historico.append(f"  (padding adicionado: {hamming_padding} bit(s))")
             historico.append(f"Codificado (Hamming 7,4): {resultado}")
 
+        elif algoritmo == "CRC-4":
+            # Usa automaticamente o último resultado codificado
+            if ultimo_resultado_codificado is None:
+                messagebox.showerror("Erro", "Codifique uma mensagem com outro algoritmo antes de aplicar CRC.")
+                return
+
+            try:
+                resultado, crc_bits = crc.encoder(ultimo_resultado_codificado)
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            historico.append(f"Entrada para CRC (bits anteriores): {ultimo_resultado_codificado}")
+            historico.append(f"Bits de redundância (CRC-4): {crc_bits}")
+            historico.append(f"Mensagem com CRC anexado: {resultado}")
+
         # Habilita inserção de erro após codificação
         ultimo_resultado_codificado = resultado.replace(" ", "")
         label_erro.config(text=f"Inserir erro (posição 0 a {len(ultimo_resultado_codificado) - 1}):")
@@ -237,6 +255,28 @@ def executar_opcao(algoritmo, acao):
             # Preenche o campo com os bits recuperados para facilitar próxima decodificação
             entrada_mensagem.delete(0, tk.END)
             entrada_mensagem.insert(0, resultado)
+            atualizar_historico()
+            return
+
+        elif algoritmo == "CRC-4":
+            # CRC não corrige erros, apenas verifica integridade
+            try:
+                sem_erro, resto = crc.verificar(mensagem.replace(" ", ""))
+            except ValueError as e:
+                messagebox.showerror("Erro", str(e))
+                return
+
+            bits_sem_crc = mensagem.replace(" ", "")[:-4]
+            historico.append(f"Verificação CRC-4:")
+            historico.append(f"  Mensagem recebida: {mensagem.replace(' ', '')}")
+            historico.append(f"  Resto da divisão: {resto}")
+            if sem_erro:
+                historico.append("  ✓ Nenhum erro detectado.")
+                historico.append(f"  Mensagem original (sem CRC): {bits_sem_crc}")
+                entrada_mensagem.delete(0, tk.END)
+                entrada_mensagem.insert(0, bits_sem_crc)
+            else:
+                historico.append("  ✗ Erro detectado na transmissão!")
             atualizar_historico()
             return
 
@@ -344,7 +384,7 @@ algoritmo_var.trace_add("write", atualizar_campo_k)
 algoritmo_menu = tk.OptionMenu(
     janela,
     algoritmo_var,
-    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman", "Repetição", "Hamming (7,4)"
+    "Golomb", "Elias-Gamma", "Fibonacci", "Huffman", "Repetição", "Hamming (7,4)", "CRC-4"
 )
 algoritmo_menu.pack()
 
