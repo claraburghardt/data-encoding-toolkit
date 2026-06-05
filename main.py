@@ -22,6 +22,18 @@ fibonacci = Fibonacci()
 # Diferente dos outros algoritmos, o Huffman precisa da árvore para decodificar
 huffman_raiz = None
 
+# Guarda o último resultado codificado (sem espaços) para inserção de erro
+ultimo_resultado_codificado = None
+
+
+def atualizar_historico():
+    """Reescreve o histórico na caixa de texto."""
+    historico_texto.config(state=tk.NORMAL)
+    historico_texto.delete(1.0, tk.END)
+    for linha in historico:
+        historico_texto.insert(tk.END, linha + "\n")
+    historico_texto.config(state=tk.DISABLED)
+
 
 def executar_opcao(algoritmo, acao):
     """
@@ -32,12 +44,12 @@ def executar_opcao(algoritmo, acao):
     - se vai codificar ou decodificar
     """
 
-    global huffman_raiz
+    global huffman_raiz, ultimo_resultado_codificado
 
     # ========================
     # ENTRADA DO USUÁRIO
     # ========================
-    
+
     # Pega o texto digitado e remove espaços extras
     mensagem = entrada_mensagem.get().strip()
 
@@ -51,7 +63,7 @@ def executar_opcao(algoritmo, acao):
     # ========================
     # CODIFICAÇÃO
     # ========================
-    
+
     if acao == "Codificar":
 
         if algoritmo == "Golomb":
@@ -86,10 +98,16 @@ def executar_opcao(algoritmo, acao):
             # Precisamos guardar a árvore para decodificar depois
             historico.append(f"Codificado (Huffman): {resultado}")
 
+        # Habilita inserção de erro após codificação
+        ultimo_resultado_codificado = resultado.replace(" ", "")
+        label_erro.config(text=f"Inserir erro (posição 0 a {len(ultimo_resultado_codificado) - 1}):")
+        entrada_pos_erro.config(state=tk.NORMAL)
+        botao_erro.config(state=tk.NORMAL)
+
     # ========================
     # DECODIFICAÇÃO
     # ========================
-    
+
     elif acao == "Decodificar":
 
         # Validação binária (aceita espaços)
@@ -127,22 +145,47 @@ def executar_opcao(algoritmo, acao):
         # Adiciona resultado ao histórico
         historico.append(f"Decodificado ({algoritmo}): {resultado}")
 
-    # ========================
-    # ATUALIZAÇÃO DA INTERFACE
-    # ========================
+    atualizar_historico()
 
-    # Libera edição temporariamente
-    historico_texto.config(state=tk.NORMAL)
 
-    # Limpa o conteúdo atual
-    historico_texto.delete(1.0, tk.END)
+def inserir_erro():
+    """
+    Inverte o bit na posição informada pelo usuário dentro do último resultado codificado.
+    Registra o antes e depois no histórico e preenche o campo de entrada para facilitar
+    a decodificação com erro.
+    """
+    global ultimo_resultado_codificado
 
-    # Reescreve todo o histórico
-    for linha in historico:
-        historico_texto.insert(tk.END, linha + "\n")
+    if ultimo_resultado_codificado is None:
+        messagebox.showerror("Erro", "Codifique uma mensagem antes de inserir erros.")
+        return
 
-    # Bloqueia edição (somente leitura)
-    historico_texto.config(state=tk.DISABLED)
+    pos_str = entrada_pos_erro.get().strip()
+    if not pos_str.isdigit():
+        messagebox.showerror("Erro", "Informe uma posição numérica válida.")
+        return
+
+    pos = int(pos_str)
+    bits = ultimo_resultado_codificado
+
+    if pos < 0 or pos >= len(bits):
+        messagebox.showerror("Erro", f"Posição inválida. Escolha entre 0 e {len(bits) - 1}.")
+        return
+
+    # Inverte o bit na posição informada
+    bit_original = bits[pos]
+    bit_novo = "1" if bit_original == "0" else "0"
+    bits_com_erro = bits[:pos] + bit_novo + bits[pos + 1:]
+
+    historico.append(f"--- Inserção de erro ---")
+    historico.append(f"Original:   {bits}")
+    historico.append(f"Com erro:   {bits_com_erro}  (bit {pos}: {bit_original} → {bit_novo})")
+
+    # Preenche o campo de entrada com os bits corrompidos para facilitar decodificação
+    entrada_mensagem.delete(0, tk.END)
+    entrada_mensagem.insert(0, bits_com_erro)
+
+    atualizar_historico()
 
 
 # ========================
@@ -219,6 +262,30 @@ executar_button = tk.Button(
     command=lambda: executar_opcao(algoritmo_var.get(), acao_var.get())
 )
 executar_button.pack()
+
+
+# ========================
+# INSERÇÃO DE ERRO
+# ========================
+
+tk.Frame(janela, height=1, bg="gray").pack(fill=tk.X, padx=10, pady=(10, 0))
+
+label_erro = tk.Label(janela, text="Inserir erro (posição):")
+label_erro.pack(pady=(6, 0))
+
+frame_erro = tk.Frame(janela)
+frame_erro.pack(pady=(0, 10))
+
+entrada_pos_erro = tk.Entry(frame_erro, width=8, state=tk.DISABLED)
+entrada_pos_erro.pack(side=tk.LEFT, padx=(0, 5))
+
+botao_erro = tk.Button(
+    frame_erro,
+    text="Inserir Erro",
+    state=tk.DISABLED,
+    command=inserir_erro
+)
+botao_erro.pack(side=tk.LEFT)
 
 
 # ========================
